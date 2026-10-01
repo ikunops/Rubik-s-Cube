@@ -1,0 +1,37 @@
+const fs = require('fs');
+let s = fs.readFileSync('work/app.js','utf8');
+
+/* ============================================================
+   统一符号基准：全部用「逻辑旋转矩阵」（与 MOVES.rot 同一套约定）
+   screenDeltaPerDeg 原来用 m4rot（CSS 角度），与 MOVES.rot（逻辑矩阵）符号相反，
+   导致选轴正确但方向反了。
+   改为：用 m3to4(MOVES[k].rot) 计算面中心的屏幕位移 —— 与动作定义完全一致。
+   ============================================================ */
+
+/* 新增：绕「逻辑层动作」转 1 步时，某点的屏幕位移方向 */
+function layerDeltaOnScreen(axis, coord, P0) {
+  /* 找到该层对应的动作，用它的逻辑旋转矩阵 */
+  const k = layerLabel(axis, coord);
+  const mv = MOVES[k];
+  if (!mv) return [0, 0];
+  const R = m3to4(mv.rot);
+  const a = projectToStage(P0);
+  const b = projectToStage(m4mv(R, P0));
+  return [b[0]-a[0], b[1]-a[1]];
+}
+
+/* 面基准：两个候选层轴，以及它们正向转动时面中心的屏幕方向 */
+function faceBasis(faceKey) {
+  const fr = FACE_FRAME[faceKey];
+  const R0 = faceRefPoint(faceKey);
+  const aDown  = fr.down.findIndex(v => v !== 0);
+  const aRight = fr.right.findIndex(v => v !== 0);
+  return {
+    aDown, aRight, R0,
+    /* 用 ±1 层（一定是标准面动作）来测方向，避免中间层符号歧义 */
+    tDown:  layerDeltaOnScreen(aDown,  aDown  === 1 ? -1 : 1, R0),
+    tRight: layerDeltaOnScreen(aRight, aRight === 0 ? 1 : 1, R0),
+  };
+}
+
+`);

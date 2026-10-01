@@ -1,0 +1,67 @@
+
+=== 1. 加载与初始渲染 ===
+  ok  : no console errors
+  ok  : 27 cubies rendered, got 27
+  ok  : 54 stickers rendered, got 54
+  ok  : 6 net faces, got 6
+  ok  : 54 net cells, got 54
+  ok  : cube has matrix3d transform
+  ok  : cubie has matrix3d transform
+
+=== 2. 复原态：每面单色（从 DOM 读贴纸颜色） ===
+  ok  : U face uniform (#f7f7f5)
+  ok  : D face uniform (#ffd500)
+  ok  : F face uniform (#0057b8)
+  ok  : B face uniform (#00a05a)
+  ok  : L face uniform (#ff6a00)
+  ok  : R face uniform (#c8102e)
+
+=== 3. 点击转动按钮 U，验证状态与展开图同步 ===
+  ok  : F face changed after U move
+  ok  : move counter = 1, got 1
+  ok  : history contains U
+  ok  : badge SCRAMBLED, got SCRAMBLED
+  ok  : net F shows red (U turned in)
+
+=== 4. 连续转动 + 队列 ===
+  ok  : move counter = 4, got 4
+
+=== 5. 键盘转动 ===
+  ok  : move counter = 5 after keyboard, got 5
+  ok  : move counter = 6 after Shift+U, got 6
+
+=== 6. 打乱 + 还原 ===
+  ok  : scrambled after 打乱
+  ok  : all faces mixed after scramble: 5,5,5,5,5,4
+  ok  : solved after 还原, got SOLVED
+
+=== 7. 展开动画 ===
+  ok  : unfold reached 100%, got 100%
+  ok  : 6 plates exist
+  ok  : all plates opaque when unfolded
+  ok  : all plates have transforms
+  ok  : solid cubies faded out when unfolded, opacity=0
+
+=== 8. 展开态下转动（平面块应跟着更新） ===
+  ok  : plate cell has color after turn
+
+=== 9. 折叠回去 ===
+  ok  : folded back to 0%, got 0%
+  ok  : cubies visible again, opacity=0.999554
+
+=== 10. 拖动转层（真实指针事件） ===
+  ok  : drag on sticker performed a turn (29 -> 30)
+
+=== 11. 拖动空白旋转视角 ===
+  ok  : orbit drag changed camera
+
+=== 12. 滚轮缩放 ===
+  ok  : wheel changed zoom
+
+=== 13. 最终无错误检查 ===
+  ok  : no runtime errors at end
+
+=== 14. 移动端视口 ===
+  ok  : no horizontal overflow on mobile, got 0px
+
+=== ALL BROWSER TESTS PASSED ===

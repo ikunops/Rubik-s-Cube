@@ -1,0 +1,1633 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>电子魔方 · 3D 与平面展开图</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --u:62px;
+  --bg:#08090d;
+  --panel:rgba(255,255,255,.045);
+  --panel2:rgba(255,255,255,.075);
+  --line:rgba(255,255,255,.10);
+  --txt:#eaeef6;
+  --dim:#8b93a7;
+  --accent:#5b9dff;
+  --ok:#3ddc97;
+  --radius:14px;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+html,body{height:100%}
+body{
+  background:var(--bg);
+  color:var(--txt);
+  font:15px/1.5 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;
+  background:
+    radial-gradient(1100px 700px at 30% 8%,rgba(91,157,255,.10),transparent 62%),
+    radial-gradient(900px 620px at 88% 96%,rgba(160,110,255,.09),transparent 60%);
+}
+
+/* ---------- 布局 ---------- */
+.app{position:relative;display:flex;flex-direction:column;height:100vh}
+.topbar{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:14px 20px;border-bottom:1px solid var(--line);
+  background:rgba(13,14,20,.94);z-index:20;
+}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto}
+.brand h1{font-size:16px;font-weight:650;letter-spacing:.2px}
+.brand .sub{font-size:12px;color:var(--dim)}
+.badge{
+  font:600 11px/1 var(--mono);color:var(--accent);
+  border:1px solid rgba(91,157,255,.35);background:rgba(91,157,255,.10);
+  padding:5px 8px;border-radius:999px;letter-spacing:.4px;
+}
+
+.main{flex:1;display:grid;grid-template-columns:1fr 372px;min-height:0}
+@media (max-width:1080px){
+  .main{grid-template-columns:1fr;overflow-y:auto}
+  body{overflow:auto}
+  .app{height:auto;min-height:100vh}
+}
+
+/* ---------- 3D 舞台 ---------- */
+.stage-wrap{position:relative;min-height:0;display:flex;flex-direction:column}
+.boot{position:absolute;inset:0;background:var(--bg);z-index:30;pointer-events:none;
+  opacity:1;transition:opacity .22s ease}
+.boot.done{opacity:0}
+
+.stage{
+  position:relative;flex:1;min-height:420px;overflow:hidden;
+  perspective:1700px;perspective-origin:50% 46%;
+  cursor:grab;touch-action:none;
+}
+.stage.grabbing{cursor:grabbing}
+.stage::after{
+  content:"";position:absolute;left:50%;top:78%;width:min(46%,420px);height:60px;
+  transform:translate(-50%,-50%);border-radius:50%;
+  background:radial-gradient(ellipse at center,rgba(0,0,0,.5),transparent 72%);
+  pointer-events:none;
+}
+.cube{
+  position:absolute;left:50%;top:46%;width:0;height:0;
+  transform-style:preserve-3d;
+  will-change:transform;
+}
+.layer{position:absolute;left:0;top:0;width:0;height:0;transform-style:preserve-3d}
+.cubie{
+  position:absolute;left:0;top:0;width:var(--u);height:var(--u);
+  margin-left:calc(var(--u) / -2);margin-top:calc(var(--u) / -2);
+  transform-style:preserve-3d;will-change:transform;
+}
+.body-face{
+  position:absolute;inset:0;background:#14141b;
+  backface-visibility:hidden;border-radius:5px;
+}
+.sticker{
+  position:absolute;
+  left:calc(var(--u) * .075);top:calc(var(--u) * .075);
+  width:calc(var(--u) * .85);height:calc(var(--u) * .85);
+  border-radius:calc(var(--u) * .10);
+  backface-visibility:hidden;
+  box-shadow:0 0 0 1px rgba(0,0,0,.32);
+  contain:layout paint;
+}
+.sticker{
+  background-image:linear-gradient(150deg,rgba(255,255,255,.18),rgba(255,255,255,0) 46%);
+}
+.cubie.dim .body-face{opacity:0;transition:opacity .3s}
+
+.plate{will-change:transform}
+
+/* 拖拽锁定的层高亮 */
+.cubie.hi .sticker{box-shadow:0 0 0 2px rgba(91,157,255,.85),0 0 14px rgba(91,157,255,.55)}
+.cubie.hi .body-face{background:#1b2436}
+
+/* 动画进行中：关闭一切非必要绘制 */
+.cube.animating .sticker{box-shadow:none}
+.cube.animating .plate{box-shadow:none}
+
+/* 舞台浮层控件 */
+.stage-hud{
+  position:absolute;left:16px;bottom:16px;display:flex;gap:8px;flex-wrap:wrap;z-index:5;
+}
+.hud{
+  display:flex;gap:6px;align-items:center;padding:6px;border-radius:12px;
+  background:rgba(16,17,24,.92);border:1px solid var(--line);
+}
+.chip{
+  appearance:none;border:1px solid transparent;background:transparent;color:var(--dim);
+  font:600 12px/1 system-ui;padding:7px 11px;border-radius:8px;cursor:pointer;
+  transition:background .15s,color .15s,border-color .15s;white-space:nowrap;
+}
+.chip:hover{background:var(--panel2);color:var(--txt)}
+.chip.on{background:rgba(91,157,255,.16);color:#bcd6ff;border-color:rgba(91,157,255,.40)}
+.stage-badge{
+  position:absolute;right:16px;top:16px;z-index:5;display:flex;gap:8px;flex-direction:column;align-items:flex-end;
+}
+.readout{
+  font:600 12px/1 var(--mono);color:var(--dim);
+  background:rgba(16,17,24,.92);border:1px solid var(--line);
+  padding:8px 11px;border-radius:10px;min-width:132px;text-align:right;
+}
+.readout b{color:var(--txt);font-weight:650}
+.hint{
+  position:absolute;left:50%;bottom:16px;transform:translateX(-50%);
+  font-size:12px;color:var(--dim);background:rgba(16,17,24,.9);
+  border:1px solid var(--line);padding:6px 12px;border-radius:999px;
+  pointer-events:none;white-space:nowrap;
+}
+
+/* ---------- 侧栏 ---------- */
+.side{
+  border-left:1px solid var(--line);background:rgba(13,14,20,.9);
+  overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px;
+}
+@media (max-width:1080px){ .side{border-left:0;border-top:1px solid var(--line)} }
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;
+}
+.card h2{
+  font-size:11px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;
+  color:var(--dim);margin-bottom:12px;display:flex;align-items:center;gap:8px;
+}
+.card h2 .tag{
+  font:600 10px/1 var(--mono);color:var(--accent);background:rgba(91,157,255,.12);
+  border:1px solid rgba(91,157,255,.28);padding:3px 6px;border-radius:5px;letter-spacing:.3px;
+  text-transform:none;
+}
+
+/* 平面展开图 */
+/* 侧栏双视图容器：平面展开图 <-> 迷你 3D 立方体 */
+.view-swap{position:relative}
+.view-swap{min-height:120px}
+.view-swap .pane{transition:opacity .30s ease,transform .30s ease}
+.view-swap .pane.hidden{opacity:0;pointer-events:none;position:absolute;inset:0;
+  transform:scale(.97);visibility:hidden}
+.mini-wrap{display:flex;justify-content:center;align-items:center}
+#miniCube{width:100%;max-width:300px;aspect-ratio:4/3;display:block;cursor:grab;touch-action:none}
+#miniCube:active{cursor:grabbing}
+.net-wrap{display:flex;justify-content:center}
+.net{
+  display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(3,1fr);
+  gap:4px;width:100%;max-width:300px;aspect-ratio:4/3;
+}
+.net-face{
+  position:relative;display:grid;grid-template-columns:repeat(3,1fr);
+  grid-template-rows:repeat(3,1fr);gap:3px;
+  padding:3px;border-radius:7px;background:#14141b;
+  box-shadow:0 2px 10px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.06);
+  cursor:pointer;transition:transform .14s,box-shadow .14s;
+}
+.net-face:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.55),0 0 0 1px rgba(91,157,255,.5)}
+.net-face .lbl{
+  position:absolute;right:3px;bottom:2px;font:700 8px/1 var(--mono);
+  color:rgba(255,255,255,.55);pointer-events:none;
+}
+.net-cell{border-radius:3px;box-shadow:inset 0 1px 0 rgba(255,255,255,.28),inset 0 -1px 3px rgba(0,0,0,.22)}
+
+/* 转动按钮 */
+.moves{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.mv.slice{color:#9fb6d8}
+.mv{
+  appearance:none;cursor:pointer;border:1px solid var(--line);background:var(--panel2);
+  color:var(--txt);border-radius:9px;padding:9px 0;font:650 13px/1 var(--mono);
+  transition:background .13s,transform .1s,border-color .13s;
+}
+.mv:hover{background:rgba(91,157,255,.18);border-color:rgba(91,157,255,.45)}
+.mv:active{transform:translateY(1px)}
+.mv.prime{color:var(--dim)}
+.mv:disabled{opacity:.32;cursor:not-allowed}
+
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn{
+  appearance:none;cursor:pointer;border:1px solid var(--line);background:var(--panel2);
+  color:var(--txt);border-radius:10px;padding:11px 12px;font:600 13px/1 system-ui;
+  transition:background .15s,border-color .15s,transform .1s;text-align:center;
+}
+.btn:hover{background:rgba(255,255,255,.12)}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:rgba(91,157,255,.20);border-color:rgba(91,157,255,.5);color:#cfe0ff}
+.btn.primary:hover{background:rgba(91,157,255,.3)}
+.btn.wide{grid-column:1/-1}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+
+.hist{
+  font:12px/1.6 var(--mono);color:var(--dim);max-height:92px;overflow-y:auto;
+  word-break:break-all;background:rgba(0,0,0,.28);border:1px solid var(--line);
+  border-radius:9px;padding:9px 10px;min-height:40px;
+}
+.hist b{color:var(--accent);font-weight:600}
+.hist .empty{color:#5a6172}
+
+.kv{display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0;border-bottom:1px dashed rgba(255,255,255,.07)}
+.kv:last-child{border-bottom:0}
+.kv span{color:var(--dim)}
+.kv b{font:600 12.5px/1 var(--mono);color:var(--txt)}
+.solved-pill{color:var(--ok)}
+.kbd{
+  font:600 10px/1 var(--mono);background:rgba(255,255,255,.09);border:1px solid var(--line);
+  border-bottom-width:2px;border-radius:5px;padding:3px 5px;color:var(--dim);
+}
+.help{font-size:12px;color:var(--dim);line-height:1.75}
+.help div{display:flex;gap:8px;align-items:baseline}
+.help .k{flex:0 0 96px;color:#aeb6c8}
+</style>
+</head>
+
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <h1>电子魔方</h1>
+      <span class="sub">3D 交互 · 平面展开图实时同步</span>
+    </div>
+    <span class="badge" id="badge">SOLVED</span>
+  </header>
+
+  <div class="main">
+    <!-- ============ 3D 舞台 ============ -->
+    <div class="stage-wrap">
+      <div class="stage" id="stage">
+        <div class="cube" id="cube"></div>
+        <div class="boot" id="boot"></div>
+      </div>
+
+      <div class="stage-hud">
+        <div class="hud">
+          <button class="chip on" id="modeOrbit" title="拖动空白处旋转视角">视角</button>
+          <button class="chip" id="modeTurn" title="拖动贴纸转动层">转动</button>
+        </div>
+        <div class="hud">
+          <button class="chip" id="btnFold">折叠</button>
+          <button class="chip" id="btnNet">展开图</button>
+          <button class="chip" id="btnSpin">自动旋转</button>
+        </div>
+      </div>
+
+      <div class="stage-badge">
+        <div class="readout">步数 <b id="roMoves">0</b></div>
+        <div class="readout">展开 <b id="roUnfold">0%</b></div>
+        <div class="readout" id="roHint">拖动贴纸转动</div>
+      </div>
+
+      <div class="hint" id="hint">拖动贴纸转层 · 拖动空白转视角 · 滚轮缩放</div>
+    </div>
+
+    <!-- ============ 侧栏 ============ -->
+    <aside class="side">
+
+      <section class="card">
+        <h2 id="viewTitle">平面展开图 <span class="tag">独立视图</span></h2>
+        <div class="hud" style="margin-bottom:10px">
+          <button class="chip" id="btnSideNet" title="侧栏显示平面展开图">平面展开图</button>
+          <button class="chip" id="btnSideMini" title="侧栏显示 3D 立体图">3D 立体图</button>
+        </div>
+        <div class="view-swap">
+          <div class="pane hidden" id="paneMini">
+            <div class="mini-wrap"><canvas id="miniCube"></canvas></div>
+          </div>
+          <div class="pane" id="paneNet">
+            <div class="net-wrap"><div class="net" id="net"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>转动 <span class="tag">整层 9 块联动</span></h2>
+        <div class="moves" id="moves"></div>
+      </section>
+
+      <section class="card">
+        <h2>操作</h2>
+        <div class="actions">
+          <button class="btn primary" id="btnScramble">打乱</button>
+          <button class="btn" id="btnSolve">还原</button>
+          <button class="btn wide" id="btnUnfold">展开 / 折叠</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>状态</h2>
+        <div class="kv"><span>当前状态</span><b id="stState">已复原</b></div>
+        <div class="kv"><span>累计步数</span><b id="stMoves">0</b></div>
+        <div class="kv"><span>展开度</span><b id="stUnfold">0%</b></div>
+        <div class="kv"><span>面数 / 小方块</span><b>6 / 27</b></div>
+        <div style="margin-top:10px">
+          <div style="font-size:11px;color:var(--dim);letter-spacing:.9px;text-transform:uppercase;margin-bottom:6px">操作记录</div>
+          <div class="hist" id="hist"><span class="empty">尚无操作</span></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>说明</h2>
+        <div class="help">
+          <div><span class="k">拖动贴纸</span><span>任意位置都可拖，整层跟手转动</span></div>
+          <div><span class="k">拖动空白</span><span>旋转观察视角</span></div>
+          <div><span class="k">滚轮</span><span>缩放</span></div>
+          <div><span class="k">键盘 U D L R F B</span><span>转动对应面</span></div>
+          <div><span class="k">Shift + 按键</span><span>逆时针转动</span></div>
+          <div><span class="k">空格</span><span>主图展开 / 折叠</span></div>
+          <div><span class="k">侧栏</span><span>可独立切换展开图 / 3D 图</span></div>
+          <div><span class="k">Esc</span><span>还原视角</span></div>
+        </div>
+      </section>
+
+    </aside>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ===== 核心数学库 ===== */
+/* ============================================================
+   电子魔方 · Electronic Rubik's Cube
+   核心数学库：3x3 整数矩阵 / 4x4 变换矩阵
+   ============================================================ */
+
+/* ---------- 3x3 ---------- */
+const I3 = [[1,0,0],[0,1,0],[0,0,1]];
+
+function m3mul(A, B) {
+  const C = [[0,0,0],[0,0,0],[0,0,0]];
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++) {
+      let s = 0;
+      for (let k = 0; k < 3; k++) s += A[i][k] * B[k][j];
+      C[i][j] = s;
+    }
+  return C;
+}
+function m3tv(A, v) {
+  return [
+    A[0][0]*v[0] + A[0][1]*v[1] + A[0][2]*v[2],
+    A[1][0]*v[0] + A[1][1]*v[1] + A[1][2]*v[2],
+    A[2][0]*v[0] + A[2][1]*v[1] + A[2][2]*v[2],
+  ];
+}
+function m3T(A) {
+  return [[A[0][0],A[1][0],A[2][0]],
+          [A[0][1],A[1][1],A[2][1]],
+          [A[0][2],A[1][2],A[2][2]]];
+}
+function m3snap(A) { return A.map(r => r.map(v => Math.round(v))); }
+
+/* 90 度旋转矩阵（CSS 约定：x 右 / y 下 / z 朝向观察者） */
+const RX90  = [[1,0,0],[0,0,-1],[0,1,0]];
+const RXn90 = [[1,0,0],[0,0,1],[0,-1,0]];
+const RY90  = [[0,0,1],[0,1,0],[-1,0,0]];
+const RYn90 = [[0,0,-1],[0,1,0],[1,0,0]];
+const RZ90  = [[0,-1,0],[1,0,0],[0,0,1]];
+const RZn90 = [[0,1,0],[-1,0,0],[0,0,1]];
+
+/* ---------- 4x4（行主序，M[r*4+c]） ---------- */
+function m4id() {
+  return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+}
+function m4mul(A, B) {
+  const C = new Array(16).fill(0);
+  for (let i = 0; i < 4; i++)
+    for (let j = 0; j < 4; j++) {
+      let s = 0;
+      for (let k = 0; k < 4; k++) s += A[i*4+k] * B[k*4+j];
+      C[i*4+j] = s;
+    }
+  return C;
+}
+function m4mulAll(...ms) { return ms.reduce((a, b) => m4mul(a, b)); }
+function m4T(x, y, z) {
+  return [1,0,0,x, 0,1,0,y, 0,0,1,z, 0,0,0,1];
+}
+function m4S(s) {
+  return [s,0,0,0, 0,s,0,0, 0,0,s,0, 0,0,0,1];
+}
+/* Rodrigues：绕单位轴 axis 旋转 deg 度 */
+function m4rot(axis, deg) {
+  const a = Math.hypot(...axis) || 1;
+  const [x, y, z] = axis.map(v => v / a);
+  const t = deg * Math.PI / 180;
+  const c = Math.cos(t), s = Math.sin(t), C = 1 - c;
+  return [
+    x*x*C + c,   x*y*C - z*s, x*z*C + y*s, 0,
+    y*x*C + z*s, y*y*C + c,   y*z*C - x*s, 0,
+    z*x*C - y*s, z*y*C + x*s, z*z*C + c,   0,
+    0,0,0,1,
+  ];
+}
+/* 绕过点 p 的轴旋转 */
+function m4rotAbout(axis, deg, p) {
+  return m4mulAll(m4T(p[0], p[1], p[2]), m4rot(axis, deg), m4T(-p[0], -p[1], -p[2]));
+}
+function m4mv(M, v) {
+  const [x, y, z] = v;
+  const w = M[12]*x + M[13]*y + M[14]*z + M[15] || 1;
+  return [
+    (M[0]*x + M[1]*y + M[2]*z + M[3]) / w,
+    (M[4]*x + M[5]*y + M[6]*z + M[7]) / w,
+    (M[8]*x + M[9]*y + M[10]*z + M[11]) / w,
+  ];
+}
+/* 只取旋转/缩放部分作用于方向向量 */
+function m4dir(M, v) {
+  const [x, y, z] = v;
+  return [
+    M[0]*x + M[1]*y + M[2]*z,
+    M[4]*x + M[5]*y + M[6]*z,
+    M[8]*x + M[9]*y + M[10]*z,
+  ];
+}
+/* 行主序 -> CSS matrix3d（列主序） */
+function m4css(M) {
+  return 'matrix3d(' + [
+    M[0], M[4], M[8],  M[12],
+    M[1], M[5], M[9],  M[13],
+    M[2], M[6], M[10], M[14],
+    M[3], M[7], M[11], M[15],
+  ].map(v => (Math.abs(v) < 1e-9 ? 0 : +v.toFixed(6))).join(',') + ')';
+}
+function m3to4(R) {
+  return [R[0][0],R[0][1],R[0][2],0,
+          R[1][0],R[1][1],R[1][2],0,
+          R[2][0],R[2][1],R[2][2],0,
+          0,0,0,1];
+}
+
+/* ---------- 颜色 / 面定义 ---------- */
+/* CSS 空间：x 右 / y 下 / z 朝前 */
+const FACE_DEF = {
+  R: { n: [ 1, 0, 0], color: '#c8102e', label: 'R' },   // 右 · 红
+  L: { n: [-1, 0, 0], color: '#ff6a00', label: 'L' },   // 左 · 橙
+  U: { n: [ 0,-1, 0], color: '#f7f7f5', label: 'U' },   // 上 · 白
+  D: { n: [ 0, 1, 0], color: '#ffd500', label: 'D' },   // 下 · 黄
+  F: { n: [ 0, 0, 1], color: '#0057b8', label: 'F' },   // 前 · 蓝
+  B: { n: [ 0, 0,-1], color: '#00a05a', label: 'B' },   // 后 · 绿
+};
+const FACE_KEYS = ['U','D','F','B','L','R'];
+
+/* 每个面的标准局部坐标系（从面外看：right=屏幕右, down=屏幕下）
+   满足 right x down === n，保证 6 个面的网格方向一致 */
+const FACE_FRAME = {
+  U: { n: [ 0,-1, 0], right: [ 1, 0, 0], down: [ 0, 0, 1] },
+  D: { n: [ 0, 1, 0], right: [ 1, 0, 0], down: [ 0, 0,-1] },
+  F: { n: [ 0, 0, 1], right: [ 1, 0, 0], down: [ 0, 1, 0] },
+  B: { n: [ 0, 0,-1], right: [-1, 0, 0], down: [ 0, 1, 0] },
+  L: { n: [-1, 0, 0], right: [ 0, 0, 1], down: [ 0, 1, 0] },
+  R: { n: [ 1, 0, 0], right: [ 0, 0,-1], down: [ 0, 1, 0] },
+};
+/* 面中心（世界坐标） */
+const FACE_CENTER = {
+  U: [0,-1,0], D: [0,1,0], F: [0,0,1], B: [0,0,-1], L: [-1,0,0], R: [1,0,0],
+};
+/* 魔方外表面到中心的距离（3 个单位方块，中心在 ±1，故半宽 1.5） */
+const CUBE_HALF = 1.5;
+/* 某个面的"贴纸面"中心（位于外表面） */
+function sheetCenter(f) {
+  const c = FACE_CENTER[f];
+  return [c[0]*CUBE_HALF, c[1]*CUBE_HALF, c[2]*CUBE_HALF];
+}
+
+/* 面网格 (row, col) -> 该面局部的 3D 偏移 */
+function faceCellOffset(f, row, col) {
+  const fr = FACE_FRAME[f];
+  return [0,1,2].map(i => (col - 1) * fr.right[i] + (row - 1) * fr.down[i]);
+}
+/* 面中心 + 网格偏移 -> 世界坐标 */
+function faceCellCenter(f, row, col) {
+  const c = FACE_CENTER[f], o = faceCellOffset(f, row, col);
+  return [c[0] + o[0], c[1] + o[1], c[2] + o[2]];
+}
+const nKey = n => n[0] + ',' + n[1] + ',' + n[2];
+const KEY_TO_FACE = {};
+for (const k of FACE_KEYS) KEY_TO_FACE[nKey(FACE_DEF[k].n)] = k;
+
+/* 把 +z 转到 n 的旋转矩阵 */
+const Z_TO_N = {
+  '1,0,0':  RY90,
+  '-1,0,0': RYn90,
+  '0,1,0':  RXn90,
+  '0,-1,0': RX90,
+  '0,0,1':  I3,
+  '0,0,-1': [[-1,0,0],[0,1,0],[0,0,-1]],
+};
+
+/* ---------- 转动定义 ----------
+   rot 为逻辑旋转矩阵；ang 为 CSS rotate3d 的动画角度 */
+const MOVES = {
+  U: { axis: [0,1,0], layerAxis: 1, layerVal: -1, rot: RYn90, ang: -90 },
+  D: { axis: [0,1,0], layerAxis: 1, layerVal:  1, rot: RY90,  ang:  90 },
+  R: { axis: [1,0,0], layerAxis: 0, layerVal:  1, rot: RX90,  ang:  90 },
+  L: { axis: [1,0,0], layerAxis: 0, layerVal: -1, rot: RXn90, ang: -90 },
+  F: { axis: [0,0,1], layerAxis: 2, layerVal:  1, rot: RZ90,  ang:  90 },
+  B: { axis: [0,0,1], layerAxis: 2, layerVal: -1, rot: RZn90, ang: -90 },
+};
+/* 中间层切片：M 跟随 L，E 跟随 D，S 跟随 F */
+MOVES.M = { axis: [1,0,0], layerAxis: 0, layerVal: 0, rot: RXn90, ang: -90 };
+MOVES.E = { axis: [0,1,0], layerAxis: 1, layerVal: 0, rot: RY90,  ang:  90 };
+MOVES.S = { axis: [0,0,1], layerAxis: 2, layerVal: 0, rot: RZ90,  ang:  90 };
+/* 可转动层（6 个面 + 3 个切片） */
+const MOVE_KEYS = ['U','D','L','R','F','B','M','E','S'];
+
+function moveInfo(name) {
+  const prime = name.endsWith("'");
+  const base = MOVES[name[0]];
+  return {
+    name,
+    base,
+    prime,
+    rot: prime ? m3T(base.rot) : base.rot,
+    ang: prime ? -base.ang : base.ang,
+  };
+}
+
+/* ---------- 展开铰链 ----------
+   chain 依次应用（chain[0] 最先），每项：绕 point 处的 axis 转 sign*90 度 */
+function buildHinges(H = CUBE_HALF) {
+  const ax = { x: [1,0,0], y: [0,1,0], z: [0,0,1] };
+  return {
+    F: [],
+    U: [{ a: ax.x, p: [0,-H, H], s: -1 }],
+    D: [{ a: ax.x, p: [0, H, H], s:  1 }],
+    R: [{ a: ax.y, p: [ H,0, H], s: -1 }],
+    L: [{ a: ax.y, p: [-H,0, H], s:  1 }],
+    B: [{ a: ax.y, p: [ H,0,-H], s: -1 },
+        { a: ax.y, p: [ H,0, H], s: -1 }],
+  };
+}
+function unfoldMatrix(chain, t) {
+  let M = m4id();
+  for (const h of chain) M = m4mul(m4rotAbout(h.a, h.s * 90 * t, h.p), M);
+  return M;
+}
+
+/* ---------- 平面展开图（十字形）的 2D -> 3D 映射 ---------- */
+const NET_LAYOUT = {
+  U: { col: 1, row: 0 },
+  L: { col: 0, row: 1 }, F: { col: 1, row: 1 },
+  R: { col: 2, row: 1 }, B: { col: 3, row: 1 },
+  D: { col: 1, row: 2 },
+};
+/* 展开图 2D 网格：相邻面中心间距（每面 3 个单位宽） */
+const NET_PITCH = 3;
+/* 面 f 在展开图中的 2D 中心偏移 */
+function netOffset2D(f) {
+  const { col, row } = NET_LAYOUT[f];
+  return [(col - 1) * NET_PITCH, (row - 1) * NET_PITCH];
+}
+
+/* 给定面 f 的格子 (row r, col c) -> 该贴在魔方上的小方块坐标 */
+function netCellToPos(f, r, c) {
+  switch (f) {
+    case 'U': return [c - 1, -1, r - 1];
+    case 'D': return [c - 1,  1, 1 - r];
+    case 'F': return [c - 1, r - 1,  1];
+    case 'B': return [1 - c, r - 1, -1];
+    case 'L': return [-1, r - 1, c - 1];
+    case 'R': return [ 1, r - 1, 1 - c];
+  }
+}
+
+/* ===== 模型层 ===== */
+/* 模型层：cubie 状态 / 转动 / 打乱 / 复原 / 展开映射 */
+/* 依赖 cube-core.js */
+
+function makeSolved() {
+  const cubies = [];
+  let id = 0;
+  for (let x = -1; x <= 1; x++)
+    for (let y = -1; y <= 1; y++)
+      for (let z = -1; z <= 1; z++) {
+        const faces = {};
+        for (const k of FACE_KEYS) {
+          const n = FACE_DEF[k].n;
+          if (x*n[0] + y*n[1] + z*n[2] === 1) faces[k] = FACE_DEF[k].color;
+        }
+        cubies.push({ id: id++, home: [x,y,z], p: [x,y,z], rot: I3.slice(), faces });
+      }
+  return cubies;
+}
+
+/* 某转动影响的层 */
+function moveLayer(mv) {
+  const b = MOVES[mv[0]];
+  return cubies => cubies.filter(c => c.p[b.layerAxis] === b.layerVal);
+}
+
+/* 对一组 cubie 应用逻辑转动 */
+function applyMoveTo(cubies, name) {
+  const { base, rot } = moveInfo(name);
+  const axis = base.layerAxis, val = base.layerVal;
+  const hit = cubies.filter(c => c.p[axis] === val);
+  for (const c of hit) {
+    c.p = m3tv(rot, c.p).map(v => Math.round(v));
+    c.rot = m3snap(m3mul(rot, c.rot));
+  }
+  return hit;
+}
+
+/* 面 -> 该面中心块的方向（世界坐标） */
+function faceNormal(c, f) {
+  return m4dir(m3to4(c.rot), FACE_DEF[f].n).map(v => Math.round(v));
+}
+
+/* 读某个面的颜色网格，统一返回 [row][col]（从面外看） */
+function readFaceColors(cubies, faceKey) {
+  const fr = FACE_FRAME[faceKey];
+  const out = [[null,null,null],[null,null,null],[null,null,null]];
+  for (const c of cubies) {
+    for (const f of FACE_KEYS) {
+      if (!c.faces[f]) continue;
+      const wn = faceNormal(c, f);
+      if (wn[0] !== fr.n[0] || wn[1] !== fr.n[1] || wn[2] !== fr.n[2]) continue;
+      const col = c.p[0]*fr.right[0] + c.p[1]*fr.right[1] + c.p[2]*fr.right[2];
+      const row = c.p[0]*fr.down[0]  + c.p[1]*fr.down[1]  + c.p[2]*fr.down[2];
+      out[row+1][col+1] = c.faces[f];
+    }
+  }
+  return out;
+}
+
+/* 当前状态下的完整 54 贴纸表：{ face: [row][col] } */
+function snapshot(cubies) {
+  const o = {};
+  for (const f of FACE_KEYS) o[f] = readFaceColors(cubies, f);
+  return o;
+}
+/* ===== 应用层 ===== */
+/* ============================================================
+   电子魔方 · 应用层 v6
+   状态机闭环重写：统一转动引擎（拖拽 / 阻尼吸附 / 队列动画）
+   ============================================================ */
+
+/* ---------- 常量 ---------- */
+let PX = 62;
+const PERSPECTIVE = 1700;
+const TURN_MS = 200;        // 队列转动动画
+const SNAP_MS = 240;        // 松手阻尼吸附
+const UNFOLD_MS = 820;
+const DRAG_LOCK_PX = 6;     // 锁定转层的最小位移
+const SNAP_DEG = 90;
+
+/* ---------- DOM ---------- */
+const stageEl    = document.getElementById('stage');
+const cubeEl     = document.getElementById('cube');
+const netEl      = document.getElementById('net');
+const histEl     = document.getElementById('hist');
+const badgeEl    = document.getElementById('badge');
+const roHintEl   = document.getElementById('roHint');
+const roUnfoldEl = document.getElementById('roUnfold');
+const stUnfoldEl = document.getElementById('stUnfold');
+const viewTitleEl= document.getElementById('viewTitle');
+const paneMiniEl = document.getElementById('paneMini');
+const paneNetEl  = document.getElementById('paneNet');
+const miniCv     = document.getElementById('miniCube');
+const bootEl     = document.getElementById('boot');
+
+/* ---------- 全局状态 ---------- */
+let cubies = makeSolved();
+let cam  = { rx: -35.264, ry: -45, zoom: 1 };
+let camT = { rx: -35.264, ry: -45, zoom: 1 };
+
+/* 主视图展开度（0=立体 1=平面） */
+let mainU = 0, mainUTarget = 0, mainUAnim = null;
+
+/* 侧栏是独立视图，与主图互不影响 */
+let sideShowsNet = true;          // 默认显示平面展开图（主图默认立体）
+
+/* 统一转动状态：拖拽 / 吸附 / 队列都走这里 */
+let spin = null;   // { axis, coord, angle, target, hit, anim }
+let queue = [];    // 待播放的转动
+let history = [];  // 用户操作历史（还原用）
+let restoreLeft = 0; // 还原剩余步数（用于计数显示）
+let historyFrozen = false; // 还原播放中：冻结 history 写入
+let moveCount = 0;
+let spinning = false;
+let mode = 'turn';
+let drag = null;
+let lastFrame = performance.now();
+let stateVer = 0, paintedVer = -1;
+const HINGES = buildHinges();
+
+/* 每帧缓存 */
+let frameUnfold = {};
+let frameCam = m4id();
+const PLATE_CACHE = {};
+let PLATE_ELS = [];
+const AXIS_VEC = [[1,0,0],[0,1,0],[0,0,1]];
+
+/* ---------- 缓动 ---------- */
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+const lerp = (a,b,t) => a + (b-a)*t;
+const easeOutCubic = p => 1 - Math.pow(1-p, 3);
+const easeInOut = p => p < 0.5 ? 4*p*p*p : 1 - Math.pow(-2*p+2,3)/2;
+
+/* ============================================================
+   1. 布局
+   ============================================================ */
+let UNFOLD_FIT = 0.62;
+function layout() {
+  const r = stageEl.getBoundingClientRect();
+  const w = r.width || 900, h = r.height || 520;
+  PX = Math.max(28, Math.min(158, Math.min(w,h) * 0.146));
+  UNFOLD_FIT = Math.max(0.30, Math.min(1.6,
+    Math.min(0.84 * w / (12 * PX), 0.84 * h / (9 * PX))));
+  document.documentElement.style.setProperty('--u', PX + 'px');
+  frameUnfold = {};
+  for (const bf of cubeEl.querySelectorAll('.body-face')) {
+    if (bf.__rot) bf.style.transform = m4css(bf.__rot) + ' translateZ(' + (PX/2) + 'px)';
+  }
+  for (const pl of PLATE_ELS) {
+    const s = 3 * PX;
+    pl.style.width = s + 'px'; pl.style.height = s + 'px';
+    pl.style.marginLeft = (-s/2) + 'px'; pl.style.marginTop = (-s/2) + 'px';
+  }
+}
+
+/* ============================================================
+   2. 构建场景
+   ============================================================ */
+function faceRotM(key) { return m3to4(Z_TO_N[nKey(FACE_DEF[key].n)]); }
+
+let solidLayer = null, plateLayer = null;
+function buildCube() {
+  cubeEl.innerHTML = '';
+  solidLayer = document.createElement('div');
+  solidLayer.className = 'layer';
+  plateLayer = document.createElement('div');
+  plateLayer.className = 'layer';
+  cubeEl.appendChild(solidLayer);
+  cubeEl.appendChild(plateLayer);
+
+  for (const c of cubies) {
+    const el = document.createElement('div');
+    el.className = 'cubie';
+    for (const k of FACE_KEYS) {
+      const body = document.createElement('div');
+      body.className = 'body-face';
+      body.__face = k;
+      body.__rot = faceRotM(k);
+      body.style.transform = m4css(body.__rot) + ' translateZ(' + (PX/2) + 'px)';
+      if (c.faces[k]) {
+        const st = document.createElement('div');
+        st.className = 'sticker';
+        st.style.background = c.faces[k];
+        body.appendChild(st);
+      }
+      el.appendChild(body);
+    }
+    c.el = el;
+    el.__cubie = c;
+    solidLayer.appendChild(el);
+  }
+  buildPlates();
+}
+
+function buildPlates() {
+  plateLayer.innerHTML = '';
+  for (const f of FACE_KEYS) {
+    const pl = document.createElement('div');
+    pl.className = 'plate';
+    const s = 3 * PX;
+    Object.assign(pl.style, {
+      position:'absolute', left:'0', top:'0',
+      width: s+'px', height: s+'px',
+      marginLeft: (-s/2)+'px', marginTop: (-s/2)+'px',
+      display:'grid', gridTemplateColumns:'repeat(3,1fr)', gridTemplateRows:'repeat(3,1fr)',
+      gap:'3px', padding:'3px', borderRadius:'10px', background:'#14141b',
+      transformStyle:'preserve-3d', opacity:'0', pointerEvents:'none',
+      boxShadow:'0 0 0 1px rgba(255,255,255,.08)',
+    });
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement('div');
+      cell.style.borderRadius = '5px';
+      cell.style.boxShadow = '0 0 0 1px rgba(0,0,0,.18)';
+      pl.appendChild(cell);
+    }
+    pl.__face = f;
+    plateLayer.appendChild(pl);
+  }
+  PLATE_ELS = Array.from(plateLayer.querySelectorAll('.plate'));
+  for (const k in PLATE_CACHE) delete PLATE_CACHE[k];
+}
+
+/* ============================================================
+   3. 矩阵
+   ============================================================ */
+function baseM(c) {
+  return m4mul(m4T(c.p[0]*PX, c.p[1]*PX, c.p[2]*PX), m3to4(c.rot));
+}
+function plateBaseM(f) {
+  const sc = sheetCenter(f);
+  return m4mul(m4T(sc[0]*PX, sc[1]*PX, sc[2]*PX), faceRotM(f));
+}
+function scaleTranslation(M, k) {
+  const o = M.slice();
+  o[3] = M[3]*k; o[7] = M[7]*k; o[11] = M[11]*k;
+  return o;
+}
+function unfoldM(f, t) {
+  const key = f + '|' + t.toFixed(4);
+  if (!frameUnfold[key]) frameUnfold[key] = scaleTranslation(unfoldMatrix(HINGES[f], t), PX);
+  return frameUnfold[key];
+}
+function cameraM(t) {
+  const shift = m4T(-1.5 * PX * t, 0, 0);
+  return m4mulAll(m4S(cam.zoom * lerp(1, UNFOLD_FIT, t)),
+                  m4rot([1,0,0], cam.rx), m4rot([0,1,0], cam.ry), shift);
+}
+/* 正交投影（用于方向判定与角度求解，去掉透视干扰） */
+function projectOrtho(v) {
+  const p = m4mv(frameCam, v);
+  return [p[0], p[1]];
+}
+
+function projectToStage(v) {
+  const r = stageEl.getBoundingClientRect();
+  const p = m4mv(frameCam, v);
+  const k = PERSPECTIVE / (PERSPECTIVE - p[2]);
+  return [r.width/2 + p[0]*k, r.height*0.46 + p[1]*k];
+}
+
+/* ============================================================
+   4. 转动引擎（统一：拖拽 / 吸附 / 队列）
+   ============================================================ */
+function layerCubies(axis, coord) {
+  return cubies.filter(c => c.p[axis] === coord);
+}
+function invertMove(n) { return n.endsWith("'") ? n[0] : n + "'"; }
+
+/* 立即落子（不播放动画），用于打乱 / 还原的批量应用 */
+function applyInstant(name) {
+  applyMoveTo(cubies, name);
+  stateVer++;
+}
+
+/* 队列播放（按钮 / 键盘） */
+function doMove(name) {
+  if (queue.length > 24) return;            // 防溢出
+  queue.push(name);
+  pumpQueue();
+}
+
+/* 取下一个队列动作，交给 spin 播放 */
+function pumpQueue() {
+  if (spin || !queue.length) return;
+  const name = queue.shift();
+  const info = moveInfo(name);
+  const b = info.base;
+  spin = {
+    axis: b.layerAxis, coord: b.layerVal,
+    angle: 0, target: info.ang,       // 队列动画：0 -> ±90
+    name,
+    hit: layerCubies(b.layerAxis, b.layerVal),
+    anim: { from: 0, to: info.ang, t0: performance.now(), dur: TURN_MS },
+  };
+}
+
+/* 提交当前 spin 到逻辑状态 */
+function commitSpin() {
+  if (!spin) return;
+  const name = spin.name;
+  spin = null;
+  applyMoveTo(cubies, name);
+  if (name) {
+    if (historyFrozen) {
+      /* 还原播放中：不写回 history，只递减剩余步数 */
+      restoreLeft = Math.max(0, restoreLeft - 1);
+      if (restoreLeft === 0 && queue.length === 0) historyFrozen = false;
+    } else {
+      history.push(name);
+      moveCount++;
+    }
+  }
+  stateVer++;
+  updateUI();
+  pumpQueue();
+}
+
+/* 拖动开始：锁定层（不受 anim 状态影响，随时可拖） */
+function beginSpin(axis, coord, hit) {
+  spin = { axis, coord, angle: 0, target: 0, name: null, hit, anim: null, dragging: true };
+}
+
+/* 拖动中：角度直接跟手 */
+function updateSpinDrag(angle) {
+  if (spin) { spin.angle = angle; spin.dragging = true; }
+}
+
+/* 松手：阻尼吸附到最近的 90 度。
+   关键约束：视觉转了几格，逻辑就必须应用几格。
+   做法：把总步数拆成「第一格做吸附动画 + 剩余格入队」，每格都有一次 commit。 */
+const MAX_INERTIA_STEPS = 1;      // 惯性最多多带 1 格
+const MAX_DRAG_STEPS = 2;         // 单次拖拽最多 2 格
+
+function releaseSpin(angle, velocity) {
+  if (!spin) return;
+  /* 惯性限幅：最多再带 0.45 格，避免甩一下就转十几格 */
+  const inertia = Math.max(-0.30, Math.min(0.30, (velocity || 0) * 0.12));
+  const projected = angle + inertia * SNAP_DEG;
+  let steps = Math.round(projected / SNAP_DEG);
+  /* 只有「明显甩动」才补一格：需要速度快 且 已拖出一定角度 */
+  if (steps === 0 && Math.abs(velocity || 0) > 2.2 && Math.abs(angle) > 18) {
+    steps = Math.sign(velocity);
+  }
+  /* 限幅 */
+  steps = Math.max(-MAX_DRAG_STEPS, Math.min(MAX_DRAG_STEPS, steps));
+
+  const axis = spin.axis, coord = spin.coord;
+
+  if (steps === 0) {
+    spin.name = null;
+    spin.target = 0;
+    spin.anim = { from: angle, to: 0, t0: performance.now(), dur: SNAP_MS };
+    return;
+  }
+
+  const dir = Math.sign(steps);
+  const n = Math.abs(steps);
+  const name = moveNameFor(axis, coord, dir);
+
+  /* 第一格：从当前角度阻尼吸附到 ±90，提交后由 pumpQueue 接着播剩余格。
+     时长随角度差缩放，角度差越大回弹越久，形成阻尼感。 */
+  spin.name = name;
+  spin.target = dir * SNAP_DEG;
+  const dur = Math.max(160, Math.min(420, 150 + Math.abs(spin.target - angle) * 1.6));
+  spin.anim = { from: angle, to: dir * SNAP_DEG, t0: performance.now(), dur };
+
+  /* 剩余格数入队（每格都会独立 commit，逻辑与视觉严格一致） */
+  for (let i = 1; i < n; i++) queue.push(name);
+}
+
+/* 主循环里推进 spin */
+function stepSpin(now) {
+  if (!spin || !spin.anim) return;
+  const a = spin.anim;
+  const p = clamp01((now - a.t0) / a.dur);
+  spin.angle = lerp(a.from, a.to, easeOutCubic(p));
+  if (p >= 1) {
+    spin.angle = a.to;
+    spin.anim = null;
+    if (spin.name) commitSpin();
+    else { spin = null; pumpQueue(); }
+  }
+}
+
+const isBusy = () => !!spin || queue.length > 0;
+
+/* ============================================================
+   5. 拖拽 -> 转动数学
+   ============================================================ */
+function screenDeltaPerDeg(axis, P0) {
+  const s0 = projectOrtho(P0);
+  const s1 = projectOrtho(m4mv(m4rot(AXIS_VEC[axis], 1), P0));
+  return [s1[0]-s0[0], s1[1]-s0[1]];
+}
+function grabPoint(c, nWorld) {
+  return [ (c.p[0]+nWorld[0]*0.5)*PX, (c.p[1]+nWorld[1]*0.5)*PX, (c.p[2]+nWorld[2]*0.5)*PX ];
+}
+
+/* ============================================================
+   四边判定（最终方案）
+   每个面在屏幕上有 4 个可转方向（2 个面内轴 × 正反）。
+   做法：把「拖拽向量」投影到 4 个候选方向的 1 度切线上，取最对齐者。
+   保证：
+     - 任意位置、任意方向都能锁定（永不失败）
+     - 方向确定性（无浮点抖动，不会"一会能一会不行"）
+     - 无反向（选出的转动一定朝拖拽方向）
+   ============================================================ */
+
+/* 某动作在抓取点处的「每度屏幕位移」向量（用逻辑旋转矩阵，与 MOVES 同约定） */
+function tangentPerDeg(name, P0) {
+  const info = moveInfo(name);
+  const a = projectToStage(P0);
+  const b = projectToStage(m4mv(m4rot(info.base.axis, Math.sign(info.ang) * 1), P0));
+  return [b[0] - a[0], b[1] - a[1]];
+}
+
+/* 选轴选层：2 个面内轴 × 正反 = 4 候选，取最对齐者 */
+function pickTurnFromDrag(c, faceKey, dv) {
+  const fr = FACE_FRAME[faceKey];
+  const nW = FACE_DEF[faceKey].n;
+  const P0 = grabPoint(c, nW);
+  const dl = Math.hypot(dv[0], dv[1]) || 1;
+  /* 全部 3 个轴都参与候选（含面法向 —— 即"面原地旋转"），
+     取与拖拽方向最对齐者，最大化"往哪拖就往哪转"的直觉 */
+  const axes = [0, 1, 2];
+  let best = null;
+  for (const a of axes) {
+    const coord = c.p[a];
+    const base = layerLabel(a, coord);
+    if (!base) continue;
+    const t = tangentPerDeg(base, P0);
+    const L = Math.hypot(t[0], t[1]);
+    if (L < 1e-3) continue;
+    const cosP = (dv[0]*t[0] + dv[1]*t[1]) / (dl * L);
+    if (!best || cosP > best.cos) {
+      best = { axis: a, coord, name: base, sign: 1, t, L, cos: cosP, P0 };
+    }
+    if (-cosP > best.cos) {
+      best = { axis: a, coord, name: base + "'", sign: -1,
+               t: [-t[0], -t[1]], L, cos: -cosP, P0 };
+    }
+  }
+  return best;
+}
+
+/* 计算当前拖拽应施加的旋转角。
+   关键：灵敏度必须与「拖拽距离」成正比（常量），不能依赖切线投影大小。
+   原因：某些位置/方向上，拖拽方向与所有候选轴的切线都近乎垂直
+        （对齐度可低至 0.13），若按切线投影算角度就会趋近 0，
+        表现为"拖了却不动" —— 这正是"一会能一会不行"的根因。
+   做法：方向由切线投影的符号决定，幅度由拖拽距离线性给出：
+        拖约 0.8 个小方块宽 = 转 90°。任意方向都可靠触发。 */
+const DRAG_90_FACTOR = 0.8;
+function dragAngleFor(drag, dx, dy) {
+  const p = drag.pick;
+  if (!p) return 0;
+  const dl = Math.hypot(dx, dy);
+  if (dl < 0.5) return 0;
+  const proj = dx * p.t[0] + dy * p.t[1];     // 有符号：决定朝哪边转
+  const sgn = proj >= 0 ? 1 : -1;
+  const degPerPx = 90 / (PX * DRAG_90_FACTOR);
+  return Math.max(-140, Math.min(140, sgn * dl * degPerPx));
+}
+
+function moveNameFor(axis, coord, sign) {
+  for (const k of MOVE_KEYS) {
+    const b = MOVES[k];
+    if (b.layerAxis === axis && b.layerVal === coord) {
+      return Math.sign(b.ang) === sign ? k : k + "'";
+    }
+  }
+  return null;
+}
+function layerLabel(axis, coord) {
+  for (const k of MOVE_KEYS) {
+    const b = MOVES[k];
+    if (b.layerAxis === axis && b.layerVal === coord) return k;
+  }
+  return '?';
+}
+
+/* ============================================================
+   6. 渲染
+   ============================================================ */
+function paintPlates(t, op, paintColor) {
+  for (const pl of PLATE_ELS) {
+    const f = pl.__face;
+    if (!PLATE_CACHE[f]) PLATE_CACHE[f] = { base: plateBaseM(f), cells: Array.from(pl.children) };
+    const cc = PLATE_CACHE[f];
+    pl.style.transform = m4css(m4mul(unfoldM(f, t), cc.base));
+    pl.style.opacity = op;
+    if (paintColor) {
+      const g = readFaceColors(cubies, f);
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
+        cc.cells[r*3+c].style.background = g[r][c] || '#1c1c24';
+      }
+    }
+  }
+}
+
+function render(now) {
+  /* 本帧的转动矩阵 */
+  let turnM = m4id(), activeHit = null;
+  if (spin && spin.anim) {
+    turnM = m4rot(AXIS_VEC[spin.axis], spin.angle);
+    activeHit = spin.hit;
+  } else if (spin && spin.dragging) {
+    turnM = m4rot(AXIS_VEC[spin.axis], spin.angle);
+    activeHit = spin.hit;
+  }
+
+  frameUnfold = {};
+  frameCam = cameraM(mainU);
+  cubeEl.style.transform = m4css(frameCam);
+
+  const solidFade = 1 - clamp01(mainU / 0.13);
+  const plateOp = Math.max(0.001, clamp01(mainU / 0.11));
+
+  /* 27 个小方块 */
+  if (solidFade > 0.004) {
+    for (const c of cubies) {
+      const M = m4mulAll((activeHit && activeHit.indexOf(c) >= 0) ? turnM : m4id(), baseM(c));
+      c.el.style.transform = m4css(M);
+      c.el.style.opacity = solidFade;
+    }
+    if (solidHidden) { solidLayer.style.visibility = ''; solidHidden = false; }
+  } else if (!solidHidden) {
+    for (const c of cubies) c.el.style.opacity = 0;
+    solidLayer.style.visibility = 'hidden';
+    solidHidden = true;
+  }
+
+  /* 6 个面片 */
+  paintPlates(mainU, plateOp, paintedVer !== stateVer);
+  if (paintedVer !== stateVer) {
+    paintedVer = stateVer;
+    renderNet();
+    drawMini();
+  }
+}
+let solidHidden = false;
+
+/* ============================================================
+   7. 侧栏平面展开图
+   ============================================================ */
+let netCells = {};
+function buildNet() {
+  netEl.innerHTML = '';
+  netCells = {};
+  for (const f of FACE_KEYS) {
+    const { col, row } = NET_LAYOUT[f];
+    const box = document.createElement('div');
+    box.className = 'net-face';
+    box.style.gridColumn = col + 1;
+    box.style.gridRow = row + 1;
+    box.__face = f;
+    box.title = '点击：' + f + ' 面顺时针转动';
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'net-cell';
+      box.appendChild(cell);
+    }
+    const lbl = document.createElement('span');
+    lbl.className = 'lbl';
+    lbl.textContent = f;
+    box.appendChild(lbl);
+    box.addEventListener('click', () => doMove(f));
+    netEl.appendChild(box);
+    netCells[f] = box.children;
+  }
+}
+function renderNet() {
+  for (const f of FACE_KEYS) {
+    const g = readFaceColors(cubies, f);
+    const cells = netCells[f];
+    if (!cells) continue;
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
+      cells[r*3+c].style.background = g[r][c] || '#1c1c24';
+    }
+  }
+}
+
+/* ============================================================
+   8. 侧栏迷你 3D 立方体（独立视图，与主图无关）
+   ============================================================ */
+let miniRx = -35.264, miniRy = -45, miniTargetRx = -35.264, miniTargetRy = -45;
+let miniDrag = null;
+
+function miniRotM(rx, ry) { return m4mul(m4rot([1,0,0], rx), m4rot([0,1,0], ry)); }
+
+function miniVisibleFaces(R) {
+  return FACE_KEYS
+    .map(f => ({ f, z: m4dir(R, FACE_DEF[f].n)[2] }))
+    .filter(o => o.z > 0.02)
+    .sort((a,b) => a.z - b.z)
+    .map(o => o.f);
+}
+
+function drawMini() {
+  if (!miniCv) return;
+  const w = miniCv.clientWidth, h = miniCv.clientHeight;
+  if (w < 8 || h < 8) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (miniCv.width !== Math.round(w*dpr) || miniCv.height !== Math.round(h*dpr)) {
+    miniCv.width = Math.round(w*dpr);
+    miniCv.height = Math.round(h*dpr);
+  }
+  const ctx = miniCv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const R = miniRotM(miniRx, miniRy);
+  const proj = v => { const p = m4mv(R, v); return [p[0], p[1]]; };
+
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  for (const sx of [-1.5,1.5]) for (const sy of [-1.5,1.5]) for (const sz of [-1.5,1.5]) {
+    const p = proj([sx,sy,sz]);
+    x0 = Math.min(x0,p[0]); x1 = Math.max(x1,p[0]);
+    y0 = Math.min(y0,p[1]); y1 = Math.max(y1,p[1]);
+  }
+  const pad = 18;
+  const k = Math.min((w-pad*2)/(x1-x0), (h-pad*2)/(y1-y0));
+  const cx = w/2 - ((x0+x1)/2)*k, cy = h/2 - ((y0+y1)/2)*k;
+  const toS = v => { const p = proj(v); return [cx+p[0]*k, cy+p[1]*k]; };
+
+  const drawFace = (f, colors, gap) => {
+    const fr = FACE_FRAME[f], c = sheetCenter(f);
+    const corners = [[-1,-1],[1,-1],[1,1],[-1,1]].map(([dr,dc]) => {
+      const o = [0,1,2].map(i => dc*fr.right[i]*1.5 + dr*fr.down[i]*1.5);
+      return toS([c[0]+o[0], c[1]+o[1], c[2]+o[2]]);
+    });
+    ctx.beginPath();
+    ctx.moveTo(corners[0][0], corners[0][1]);
+    for (let i = 1; i < 4; i++) ctx.lineTo(corners[i][0], corners[i][1]);
+    ctx.closePath();
+    ctx.fillStyle = '#15151d';
+    ctx.fill();
+
+    for (let r = 0; r < 3; r++) for (let cc2 = 0; cc2 < 3; cc2++) {
+      const o = [0,1,2].map(i => (cc2-1)*fr.right[i] + (r-1)*fr.down[i]);
+      const ctr = [c[0]+o[0], c[1]+o[1], c[2]+o[2]];
+      const e = 0.5 - gap;
+      const pts = [[-1,-1],[1,-1],[1,1],[-1,1]].map(([dr,dc]) => {
+        const oo = [0,1,2].map(i => dc*fr.right[i]*e + dr*fr.down[i]*e);
+        return toS([ctr[0]+oo[0], ctr[1]+oo[1], ctr[2]+oo[2]]);
+      });
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < 4; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.closePath();
+      ctx.fillStyle = colors[r][cc2] || '#1c1c24';
+      ctx.fill();
+    }
+  };
+
+  for (const f of miniVisibleFaces(R)) drawFace(f, readFaceColors(cubies, f), 0.055);
+}
+
+/* 侧栏视图切换：独立控制，不随主图联动 */
+function setSideView(showNet) {
+  sideShowsNet = showNet;
+  paneMiniEl.classList.toggle('hidden', showNet);
+  paneNetEl.classList.toggle('hidden', !showNet);
+  viewTitleEl.innerHTML = (showNet ? '平面展开图' : '3D 立体图') +
+    '<span class="tag">独立视图</span>';
+  if (!showNet) requestAnimationFrame(() => requestAnimationFrame(drawMini));
+}
+
+/* ============================================================
+   9. 交互
+   ============================================================ */
+function onDown(e) {
+  if (e.button !== 0 && e.pointerType === 'mouse') return;
+  /* 侧栏迷你立方体 */
+  if (e.target === miniCv && !sideShowsNet) {
+    miniDrag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, rx0: miniTargetRx, ry0: miniTargetRy };
+    stageEl.setPointerCapture && miniCv.setPointerCapture(e.pointerId);
+    return;
+  }
+  const cubieEl = e.target.closest ? e.target.closest('.cubie') : null;
+  const c = cubieEl ? cubieEl.__cubie : null;
+  const bodyEl = e.target.closest ? e.target.closest('.body-face') : null;
+  /* 优先用精确命中的面；若点在方块边缘/间隙（命中 .cubie 本身），
+     回退到该方块朝向相机最正的那个面，保证拖拽总能转层。 */
+  let faceKey = bodyEl ? bodyEl.__face : null;
+  if (!faceKey && c) faceKey = frontFaceOf(c);
+
+  /* 关键修复：不再因 anim 状态拒绝拖拽。
+     只要在「转动」模式且主图是立体态，就允许随时拖。 */
+  const canTurn = mode === 'turn' && c && faceKey && mainU < 0.05;
+  stageEl.setPointerCapture(e.pointerId);
+  drag = {
+    id: e.pointerId, x0: e.clientX, y0: e.clientY,
+    kind: canTurn ? 'turn' : 'orbit',
+    c, faceKey, nWorld: canTurn ? faceNormal(c, faceKey) : null,
+    rx0: camT.rx, ry0: camT.ry,
+    locked: false, axis: 0, coord: 0, angle: 0, hit: null, P0: null,
+    lastX: e.clientX, lastY: e.clientY, lastT: performance.now(),
+    vel: 0,
+  };
+  stageEl.classList.add('grabbing');
+}
+
+function onMove(e) {
+  /* 侧栏迷你立方体拖动 */
+  if (miniDrag && e.pointerId === miniDrag.id) {
+    const dx = e.clientX - miniDrag.x0, dy = e.clientY - miniDrag.y0;
+    miniTargetRy = miniDrag.ry0 + dx * 0.5;
+    miniTargetRx = Math.max(-88, Math.min(88, miniDrag.rx0 - dy * 0.42));
+    return;
+  }
+  if (!drag || e.pointerId !== drag.id) return;
+  const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+  const dist = Math.hypot(dx, dy);
+
+  if (drag.kind === 'turn') {
+    if (!drag.locked) {
+      if (dist < DRAG_LOCK_PX) return;
+      const t = pickTurnFromDrag(drag.c, drag.faceKey, [dx, dy]);
+      drag.locked = true;
+      drag.axis = t.axis; drag.coord = t.coord;
+      drag.pick = t;               // 保存候选（轴/符号/切线/抓取点）
+      const hit = layerCubies(t.axis, t.coord);
+      /* 用户开始拖拽 = 接管控制：先落定在播动画，再清空剩余队列 */
+      queue.length = 0;
+      if (spin && spin.anim) { spin.angle = spin.target; spin.anim = null; commitSpin(); }
+      spin = null;
+      beginSpin(t.axis, t.coord, hit);
+      for (const cc of hit) cc.el.classList.add('hi');
+      roHintEl.textContent = layerLabel(t.axis, t.coord) + ' 层';
+      return;
+    }
+    /* 跟手 + 记录速度（用于松手惯性） */
+    const nowT = performance.now();
+    const dt = Math.max(8, nowT - drag.lastT);
+    const a0 = spin ? spin.angle : 0;
+    const a1 = dragAngleFor(drag, dx, dy);
+    const inst = (a1 - a0) / dt * 1000 / 90;          // 瞬时角速度（格/秒）
+    drag.vel = drag.vel * 0.55 + inst * 0.45;         // EMA 平滑，抑制尖峰
+    drag.lastX = e.clientX; drag.lastY = e.clientY; drag.lastT = nowT;
+    updateSpinDrag(a1);
+    roHintEl.textContent = layerLabel(drag.axis, drag.coord) + ' 层 · ' +
+                           Math.round(Math.abs(a1)) + '°';
+    return;
+  }
+
+  camT.ry = drag.ry0 + dx * 0.34;
+  camT.rx = Math.max(-88, Math.min(88, drag.rx0 - dy * 0.30));
+}
+
+function clearHi() { for (const c of cubies) c.el.classList.remove('hi'); }
+
+/* 该小方块朝向相机最正的那个面（用于命中方块边缘时的回退） */
+function frontFaceOf(c) {
+  let best = null;
+  for (const k of FACE_KEYS) {
+    if (!c.faces[k]) continue;
+    const nz = m4dir(frameCam, faceNormal(c, k))[2];
+    if (!best || nz > best.nz) best = { nz, k };
+  }
+  return best ? best.k : null;
+}
+
+function onUp(e) {
+  if (miniDrag) { miniDrag = null; return; }
+  if (!drag) return;
+  try { stageEl.releasePointerCapture(drag.id); } catch (_) {}
+  const d = drag;
+  drag = null;
+  stageEl.classList.remove('grabbing');
+  clearHi();
+
+  if (d.kind === 'turn' && d.locked) {
+    releaseSpin(spin ? spin.angle : 0, d.vel);   // 阻尼 + 惯性吸附
+    roHintEl.textContent = mode === 'turn' ? '拖动贴纸转动' : '拖动旋转视角';
+  }
+}
+
+function onWheel(e) {
+  e.preventDefault();
+  camT.zoom = Math.max(0.45, Math.min(2.4, camT.zoom * (e.deltaY > 0 ? 0.92 : 1.08)));
+}
+
+/* ============================================================
+   10. 主循环
+   ============================================================ */
+function frame(now) {
+  const dt = Math.min(64, now - lastFrame) / 1000;
+  lastFrame = now;
+
+  stepSpin(now);
+
+  /* 主视图展开动画 */
+  if (Math.abs(mainU - mainUTarget) > 1e-4) {
+    if (!mainUAnim) mainUAnim = { from: mainU, to: mainUTarget, t0: now, dur: UNFOLD_MS };
+    const p = clamp01((now - mainUAnim.t0) / mainUAnim.dur);
+    mainU = lerp(mainUAnim.from, mainUAnim.to, easeInOut(p));
+    if (p >= 1) { mainU = mainUTarget; mainUAnim = null; }
+    const pct = Math.round(mainU * 100) + '%';
+    roUnfoldEl.textContent = pct;
+    stUnfoldEl.textContent = pct;
+  }
+
+  /* 视角平滑 */
+  if (spinning) camT.ry += dt * 22;
+  const k = 1 - Math.pow(0.0016, dt);
+  cam.rx = lerp(cam.rx, camT.rx, k);
+  cam.ry = lerp(cam.ry, camT.ry, k);
+  cam.zoom = lerp(cam.zoom, camT.zoom, k);
+
+  /* 侧栏迷你立方体平滑 */
+  if (!sideShowsNet) {
+    const mk = 1 - Math.pow(0.0016, dt);
+    const nRx = lerp(miniRx, miniTargetRx, mk);
+    const nRy = lerp(miniRy, miniTargetRy, mk);
+    if (Math.abs(nRx - miniRx) > 0.01 || Math.abs(nRy - miniRy) > 0.01) {
+      miniRx = nRx; miniRy = nRy;
+      drawMini();
+    }
+  }
+
+  render(now);
+  requestAnimationFrame(frame);
+}
+
+/* ============================================================
+   11. UI
+   ============================================================ */
+function isSolved() {
+  return FACE_KEYS.every(f => readFaceColors(cubies, f).flat().every(x => x === FACE_DEF[f].color));
+}
+
+function updateUI() {
+  const solved = isSolved();
+  badgeEl.textContent = solved ? 'SOLVED' : 'SCRAMBLED';
+  badgeEl.style.color = solved ? 'var(--ok)' : '#ffb84d';
+  badgeEl.style.borderColor = solved ? 'rgba(61,220,151,.4)' : 'rgba(255,184,77,.4)';
+  badgeEl.style.background = solved ? 'rgba(61,220,151,.10)' : 'rgba(255,184,77,.10)';
+  const stEl = document.getElementById('stState');
+  stEl.textContent = solved ? '已复原' : '未复原';
+  stEl.className = solved ? 'solved-pill' : '';
+  document.getElementById('stMoves').textContent = moveCount;
+  document.getElementById('roMoves').textContent = moveCount;
+
+  /* 还原进行中：显示剩余步数 */
+  const btnSolve = document.getElementById('btnSolve');
+  btnSolve.textContent = restoreLeft > 0 ? ('还原中 ' + restoreLeft) : '还原';
+  /* 无可还原内容时禁用，避免无效点击 */
+  btnSolve.disabled = restoreLeft > 0 || isBusy() || history.length === 0;
+
+  if (!history.length && restoreLeft === 0) {
+    histEl.innerHTML = '<span class="empty">尚无操作</span>';
+  } else {
+    histEl.innerHTML = history.map((m, i) =>
+      '<b>' + String(i+1).padStart(2,'0') + '</b> ' + m.replace("'", '&#8242;')).join('&nbsp;&nbsp;');
+    histEl.scrollTop = histEl.scrollHeight;
+  }
+}
+
+function buildMoveButtons() {
+  const box = document.getElementById('moves');
+  box.innerHTML = '';
+  for (const base of ['U','D','L','R','F','B','M','E','S']) {
+    for (const p of ['', "'"]) {
+      const b = document.createElement('button');
+      b.className = 'mv' + (p ? ' prime' : '');
+      b.textContent = base + (p ? '′' : '');
+      b.addEventListener('click', () => doMove(base + p));
+      box.appendChild(b);
+    }
+  }
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('modeOrbit').classList.toggle('on', m === 'orbit');
+  document.getElementById('modeTurn').classList.toggle('on', m === 'turn');
+  roHintEl.textContent = m === 'turn' ? '拖动贴纸转动' : '拖动旋转视角';
+  document.getElementById('hint').textContent = m === 'turn'
+    ? '拖动贴纸转层（任意位置都可拖） · 拖动空白转视角 · 滚轮缩放'
+    : '拖动旋转视角 · 滚轮缩放 · 切到「转动」可拖贴纸';
+}
+
+/* 主图展开/折叠 —— 不再联动侧栏 */
+function toggleUnfold() {
+  mainUTarget = mainUTarget > 0.5 ? 0 : 1;
+  mainUAnim = null;
+  if (mainUTarget > 0.5) { camT.rx = 0; camT.ry = 0; camT.zoom = 1; }
+  else { camT.rx = -35.264; camT.ry = -45; camT.zoom = 1; }
+  document.getElementById('btnFold').classList.toggle('on', mainUTarget < 0.5);
+  document.getElementById('btnNet').classList.toggle('on', mainUTarget > 0.5);
+}
+
+/* 打乱：即时应用，并清空历史（否则还原语义混乱） */
+function scramble() {
+  if (isBusy()) return;
+  const bases = ['U','D','L','R','F','B'];
+  const seq = [];
+  let prev = '';
+  for (let i = 0; i < 22; i++) {
+    let b;
+    do { b = bases[Math.floor(Math.random()*6)]; } while (b === prev);
+    prev = b;
+    seq.push(b + (Math.random() < 0.5 ? "'" : ''));
+  }
+  for (const m of seq) { applyMoveTo(cubies, m); history.push(m); }
+  stateVer++;
+  moveCount += seq.length;
+  renderNet(); drawMini(); updateUI();
+}
+
+/* 还原：严格闭环 —— 用「当前 history 的逆序」逐步播放，播完 history 归零。
+   关键修复：不再先清空 history（之前导致 commitSpin 又把逆向序列写回，
+   再点一次还原等于原样转回去 -> 越还原越乱）。 */
+function solveAll() {
+  if (restoreLeft > 0) return;
+  if (!history.length) return;
+  /* 先停掉正在进行的拖拽/动画 */
+  if (spin && spin.dragging) spin = null;
+  queue.length = 0;
+  if (spin && spin.anim) { spin.angle = spin.target; spin.anim = null; if (spin.name) commitSpin(); }
+
+  const inv = history.slice().reverse().map(invertMove);
+  /* 逆序列就是唯一的真源；播放期间不写入 history */
+  history = [];
+  historyFrozen = true;
+  restoreLeft = inv.length;
+  queue.push(...inv);
+  updateUI();
+  pumpQueue();
+}
+
+/* 重置到复原态（复用已有 DOM 元素，仅改逻辑状态与贴纸颜色） */
+function resetToSolved() {
+  spin = null; queue.length = 0; drag = null;
+  history = []; moveCount = 0; restoreLeft = 0; historyFrozen = false;
+  const fresh = makeSolved();
+  for (let i = 0; i < cubies.length; i++) {
+    const c = cubies[i], f = fresh[i];
+    c.p = f.p.slice(); c.rot = f.rot.map(r => r.slice()); c.faces = Object.assign({}, f.faces);
+    /* 更新贴纸颜色 */
+    for (let k = 0; k < FACE_KEYS.length; k++) {
+      const st = c.el.children[k].querySelector('.sticker');
+      if (st) { const col = c.faces[FACE_KEYS[k]]; st.style.background = col || ''; }
+    }
+  }
+  stateVer++;
+  updateUI();
+  renderNet(); drawMini();
+  render(performance.now());
+}
+
+function resetView() {
+  camT.rx = -35.264; camT.ry = -45; camT.zoom = 1;
+  spinning = false;
+  document.getElementById('btnSpin').classList.remove('on');
+}
+
+/* ============================================================
+   12. 启动
+   ============================================================ */
+function init() {
+  layout();
+  buildCube();
+  buildNet();
+  buildMoveButtons();
+  renderNet();
+  updateUI();
+  setMode('turn');
+  document.getElementById('btnFold').classList.add('on');
+  setSideView(true);           // 侧栏默认显示平面展开图（独立于主图）
+
+  stageEl.addEventListener('pointerdown', onDown);
+  stageEl.addEventListener('pointermove', onMove);
+  stageEl.addEventListener('pointerup', onUp);
+  stageEl.addEventListener('pointercancel', onUp);
+  stageEl.addEventListener('wheel', onWheel, { passive: false });
+  stageEl.addEventListener('contextmenu', e => e.preventDefault());
+
+  /* 侧栏迷你立方体也支持拖动旋转 */
+  miniCv.addEventListener('pointerdown', onDown);
+  miniCv.addEventListener('pointermove', onMove);
+  miniCv.addEventListener('pointerup', onUp);
+
+  document.getElementById('modeOrbit').addEventListener('click', () => setMode('orbit'));
+  document.getElementById('modeTurn').addEventListener('click', () => setMode('turn'));
+  document.getElementById('btnUnfold').addEventListener('click', toggleUnfold);
+  document.getElementById('btnSideNet').addEventListener('click', () => setSideView(true));
+  document.getElementById('btnSideMini').addEventListener('click', () => setSideView(false));
+  document.getElementById('btnSpin').addEventListener('click', e => {
+    spinning = !spinning; e.currentTarget.classList.toggle('on', spinning);
+  });
+  document.getElementById('btnScramble').addEventListener('click', scramble);
+  document.getElementById('btnSolve').addEventListener('click', solveAll);
+
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    const k = e.key.toUpperCase();
+    if (MOVE_KEYS.indexOf(k) >= 0 && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      doMove(k + (e.shiftKey ? "'" : ''));
+    } else if (e.code === 'Space') { e.preventDefault(); toggleUnfold(); }
+    else if (e.key === 'Escape') resetView();
+  });
+
+  window.addEventListener('resize', () => { layout(); drawMini(); });
+
+  /* 预热：跑一遍完整展开路径，消除首次展开的冷启动尖峰 */
+  (function prewarm() {
+    const path = [0.06,0.18,0.32,0.48,0.64,0.80,1.0,0.80,0.48,0.16,0];
+    let i = 0;
+    const tick = () => {
+      if (i < path.length) {
+        mainU = path[i++];
+        frameCam = cameraM(mainU);
+        render(performance.now());
+        requestAnimationFrame(tick);
+      } else {
+        mainU = 0; mainUTarget = 0; mainUAnim = null;
+        frameCam = cameraM(0);
+        render(performance.now());
+        lastFrame = performance.now();
+        bootEl.classList.add('done');
+      }
+    };
+    requestAnimationFrame(tick);
+  })();
+
+  requestAnimationFrame(frame);
+}
+document.addEventListener('DOMContentLoaded', init);
+
+</script>
+</body>
+</html>

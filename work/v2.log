@@ -1,0 +1,36 @@
+=== 1. 无运行时错误 ===
+  ok  : [2.0s] no errors
+
+=== 2. 侧栏初始显示 3D 迷你立方体 ===
+  ok  : [2.0s] mini pane visible
+  ok  : [2.0s] net pane hidden
+  ok  : [2.0s] title says 3D, got: 3D 立体图 实时同步
+  ok  : [2.0s] mini cube painted pixels = 24452 (300x225)
+
+=== 3. 展开后：侧栏切成平面展开图 ===
+  ok  : [3.5s] mini pane hidden after unfold
+  ok  : [3.5s] net pane visible after unfold
+  ok  : [3.5s] title says net, got: 平面展开图 实时同步
+
+=== 4. 折叠回来：侧栏切回 3D ===
+  ok  : [4.9s] mini pane back
+  ok  : [4.9s] net pane hidden again
+
+=== 5. 拖拽转层：实时跟手 + 松手吸附 ===
+  ok  : [4.9s] found draggable sticker
+  ok  : [5.1s] drag locked as turn
+  ok  : [5.1s] live preview angle follows drag: 8.4deg
+  ok  : [5.3s] angle grows with drag: 8.4 -> 60.7
+  ok  : [5.3s] drag far enough to snap a turn (60.7deg)
+  ok  : [5.7s] committed 1 move(s) after drag
+
+=== 6. 小位移不触发转动 ===
+  ok  : [6.3s] tiny drag did not turn (moves=0)
+
+=== 7. 迷你立方体随转动更新 ===
+  ok  : [6.8s] mini cube redrew after move
+
+=== 8. 最终无错误 ===
+  ok  : [6.8s] no errors at end
+
+=== ALL PASSED ===

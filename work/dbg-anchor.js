@@ -1,0 +1,10 @@
+const fs = require('fs');
+const s = fs.readFileSync('work/app.js','utf8');
+const a = "/* 单位向量投影到屏幕的方向";
+const b = "function invertMove";
+console.log('start index:', s.indexOf(a));
+console.log('end index:', s.indexOf(b));
+console.log('length:', s.length);
+console.log('has BOM:', s.charCodeAt(0) === 0xFEFF);
+const i = s.indexOf(a);
+console.log('context:', JSON.stringify(s.slice(i, i+60)));

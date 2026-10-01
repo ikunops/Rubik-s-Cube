@@ -1,0 +1,56 @@
+const fs = require('fs');
+let s = fs.readFileSync('work/app.js','utf8');
+
+/* ============================================================
+   重写：四边判定 + 面基准方向
+   关键认识：让「被抓住的点」精确跟住鼠标在几何上做不到
+     （面边缘处的切线与鼠标方向近乎垂直）。
+   正确模型（符合直觉）：
+     1. 用「面中心」在屏幕上的两个运动方向作为基准：
+          tDown  = 绕该面 down 轴旋转时，面中心的屏幕移动方向（对应拖 左/右）
+          tRight = 绕该面 right 轴旋转时，面中心的屏幕移动方向（对应拖 上/下）
+     2. 把鼠标位移投影到这两个基准上，取分量大的那个 -> 决定绕哪条轴转
+     3. 层由「点击格子在该轴上的坐标」决定（±1 或 0=中间层 M/E/S）
+     4. 角度按投影分量线性映射（拖约 1.3 个格子宽 = 90°）
+   这样：任意位置、任意方向都稳定可预测，不会「一会能一会不能」。
+   ============================================================ */
+
+/* 面基准：返回两个候选轴及其在面中心处的屏幕运动方向 */
+function faceBasis(faceKey) {
+  const fr = FACE_FRAME[faceKey];
+  const R0 = faceRefPoint(faceKey);
+  const aDown  = fr.down.findIndex(v => v !== 0);    // 拖 左/右  -> 绕此轴
+  const aRight = fr.right.findIndex(v => v !== 0);   // 拖 上/下  -> 绕此轴
+  return { aDown, aRight,
+           tDown:  screenDeltaPerDeg(aDown,  R0),
+           tRight: screenDeltaPerDeg(aRight, R0) };
+}
+
+/* 选轴选层：投影到两个基准方向，取分量大者 */
+function pickTurnFromDrag(c, faceKey, dv) {
+  const { aDown, aRight, tDown, tRight } = faceBasis(faceKey);
+  const lD = Math.hypot(tDown[0], tDown[1])  || 1;
+  const lR = Math.hypot(tRight[0], tRight[1]) || 1;
+  const projD = (dv[0]*tDown[0]  + dv[1]*tDown[1])  / lD;
+  const projR = (dv[0]*tRight[0] + dv[1]*tRight[1]) / lR;
+  if (Math.abs(projD) >= Math.abs(projR)) {
+    return { axis: aDown,  coord: c.p[aDown],  sign: projD >= 0 ? 1 : -1, proj: projD };
+  }
+  return { axis: aRight, coord: c.p[aRight], sign: projR >= 0 ? 1 : -1, proj: projR };
+}
+
+/* 角度：把「投影分量」线性映射为旋转角。拖约 1.3 个格子宽 = 90° */
+const DEG_PER_PX_FACTOR = 1.3;
+function angleFromProjection(proj) {
+  const k = 90 / (PX * DEG_PER_PX_FACTOR);
+  return Math.max(-150, Math.min(150, proj * k));
+}
+
+/* 该层转动时，面中心的屏幕移动方向（用于判定拖动方向的符号） */
+function layerScreenDir(axis, faceKey) {
+  const t = screenDeltaPerDeg(axis, faceRefPoint(faceKey));
+  const L = Math.hypot(t[0], t[1]) || 1;
+  return [t[0]/L, t[1]/L];
+}
+
+');

@@ -1,0 +1,41 @@
+=== A. 无运行时错误 ===
+  ok  : no errors
+
+=== B. 同时展开：6 个面片一起旋出 ===
+  ok  : captured mid-animation frames (3)
+    中途 t=0.196 各面片位置与不透明度:
+      U  (306,182)  op=1
+      D  (311,670)  op=1
+      F  (306,276)  op=1
+      B  (564,283)  op=1
+      L  (289,277)  op=1
+      R  (703,276)  op=1
+  ok  : 6 plates at 6 distinct positions mid-animation
+  ok  : all 6 plates visible mid-animation
+    展开完成: pitchX=254 pitchY=255
+  ok  : L one pitch left of F
+  ok  : B two pitches right of F
+  ok  : U one pitch above F
+  ok  : D one pitch below F
+  ok  : all plates fully opaque
+  ok  : solid cubies faded out when unfolded (op=0)
+
+=== C. 折叠：6 个面片一起转回 ===
+  ok  : fold: 6 plates distinct positions mid-animation
+  ok  : cubies back when folded (op=0.999547)
+
+=== D. 拖拽跟手（核心：抓取点必须跟着鼠标走）===
+    样本 = 216  无对应层 = 0  跟手误差>1.5px = 0
+    跟手误差(弧长): 平均 0.13px  最大 0.25px
+  ok  : enough samples (216)
+  ok  : every position/direction has a layer
+  ok  : grab point follows cursor exactly
+
+=== E. 拖拽层高亮 ===
+  ok  : locked layer highlighted with 9 cubies, got 9
+  ok  : highlight cleared after release
+
+=== F. 最终无错误 ===
+  ok  : no errors at end
+
+=== ALL PASSED ===

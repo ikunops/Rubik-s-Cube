@@ -1,0 +1,11 @@
+# 生成物 / 临时产物
+work/shots/
+work/__pycache__/
+work/_syntax.js
+
+# 调试过程截图（可再生，体积大）
+work/*.png
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db

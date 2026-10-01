@@ -1,0 +1,20 @@
+问题清单（已定位到代码行）:
+
+[1] 有时能拖有时不能 —— 触发条件: 上一次转动动画的 200~240ms 内
+    const canTurn = mode==='turn' && c && faceKey && !anim && unfoldT < 0.05;
+    ^^^^ anim 为真时，拖拽静默降级成"转视角"。快速连续操作必然撞上。
+
+[2] 点还原反而更乱 —— solveAll 无闭环
+    history = [];            <- 先清空
+    doMoves(inv);            <- 队列播放，commitTurn 又往 history 里 push
+    还原完成后 history 变成"逆向序列"，再点一次还原 = 原样转回去 -> 更乱。
+    且 moveCount 归零后又被累加，显示错乱。
+
+[3] 侧栏仍与主图同步 —— 用户要"一个平铺一个折叠，不要同步"
+    setSideView(unfoldTarget > 0.5)  <- 被 toggleUnfold 调用，强制联动
+
+[4] 无阻尼感 —— 松手瞬间直接进队列播固定动画，不是从当前角度平滑吸附
+
+[5] scramble 只挡 anim 不挡 queue；键盘可无限塞队列
+
+现在按"状态机闭环"重写。先重写核心状态与渲染层:

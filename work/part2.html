@@ -1,0 +1,105 @@
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <h1>电子魔方</h1>
+      <span class="sub">3D 交互 · 平面展开图实时同步</span>
+    </div>
+    <span class="badge" id="badge">SOLVED</span>
+  </header>
+
+  <div class="main">
+    <!-- ============ 3D 舞台 ============ -->
+    <div class="stage-wrap">
+      <div class="stage" id="stage">
+        <div class="cube" id="cube"></div>
+        <div class="boot" id="boot"></div>
+      </div>
+
+      <div class="stage-hud">
+        <div class="hud">
+          <button class="chip on" id="modeOrbit" title="拖动空白处旋转视角">视角</button>
+          <button class="chip" id="modeTurn" title="拖动贴纸转动层">转动</button>
+        </div>
+        <div class="hud">
+          <button class="chip" id="btnFold">折叠</button>
+          <button class="chip" id="btnNet">展开图</button>
+          <button class="chip" id="btnSpin">自动旋转</button>
+        </div>
+      </div>
+
+      <div class="stage-badge">
+        <div class="readout">步数 <b id="roMoves">0</b></div>
+        <div class="readout">展开 <b id="roUnfold">0%</b></div>
+        <div class="readout" id="roHint">拖动贴纸转动</div>
+      </div>
+
+      <div class="hint" id="hint">拖动贴纸转层 · 拖动空白转视角 · 滚轮缩放</div>
+    </div>
+
+    <!-- ============ 侧栏 ============ -->
+    <aside class="side">
+
+      <section class="card">
+        <h2 id="viewTitle">平面展开图 <span class="tag">独立视图</span></h2>
+        <div class="hud" style="margin-bottom:10px">
+          <button class="chip" id="btnSideNet" title="侧栏显示平面展开图">平面展开图</button>
+          <button class="chip" id="btnSideMini" title="侧栏显示 3D 立体图">3D 立体图</button>
+        </div>
+        <div class="view-swap">
+          <div class="pane hidden" id="paneMini">
+            <div class="mini-wrap"><canvas id="miniCube"></canvas></div>
+          </div>
+          <div class="pane" id="paneNet">
+            <div class="net-wrap"><div class="net" id="net"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>转动 <span class="tag">整层 9 块联动</span></h2>
+        <div class="moves" id="moves"></div>
+      </section>
+
+      <section class="card">
+        <h2>操作</h2>
+        <div class="actions">
+          <button class="btn primary" id="btnScramble">打乱</button>
+          <button class="btn" id="btnSolve">还原</button>
+          <button class="btn wide" id="btnUnfold">展开 / 折叠</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>状态</h2>
+        <div class="kv"><span>当前状态</span><b id="stState">已复原</b></div>
+        <div class="kv"><span>累计步数</span><b id="stMoves">0</b></div>
+        <div class="kv"><span>展开度</span><b id="stUnfold">0%</b></div>
+        <div class="kv"><span>面数 / 小方块</span><b>6 / 27</b></div>
+        <div style="margin-top:10px">
+          <div style="font-size:11px;color:var(--dim);letter-spacing:.9px;text-transform:uppercase;margin-bottom:6px">操作记录</div>
+          <div class="hist" id="hist"><span class="empty">尚无操作</span></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>说明</h2>
+        <div class="help">
+          <div><span class="k">拖动贴纸</span><span>任意位置都可拖，整层跟手转动</span></div>
+          <div><span class="k">拖动空白</span><span>旋转观察视角</span></div>
+          <div><span class="k">滚轮</span><span>缩放</span></div>
+          <div><span class="k">键盘 U D L R F B</span><span>转动对应面</span></div>
+          <div><span class="k">Shift + 按键</span><span>逆时针转动</span></div>
+          <div><span class="k">空格</span><span>主图展开 / 折叠</span></div>
+          <div><span class="k">侧栏</span><span>可独立切换展开图 / 3D 图</span></div>
+          <div><span class="k">Esc</span><span>还原视角</span></div>
+        </div>
+      </section>
+
+    </aside>
+  </div>
+</div>
+
+<script>
+"use strict";
